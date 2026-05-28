@@ -1,0 +1,2122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>蒸馏电台 | Distillery Radio</title>
+<style>
+/* ── Reset & Base ────────────────────────────────────────── */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600&family=JetBrains+Mono:wght@300;400&display=swap');
+
+:root {
+  --bg-deep: #0a0a0f;
+  --bg-card: #12121a;
+  --bg-surface: #1a1a26;
+  --border: #2a2a3a;
+  --text-primary: #e8e4dc;
+  --text-secondary: #8a8698;
+  --text-dim: #5a5668;
+  --accent: #c4956a;
+  --accent-glow: #c4956a40;
+  --accent-warm: #d4a574;
+  --red-dim: #6b3a3a;
+  --red-glow: #8b4a4a;
+  --green-dim: #3a5a3a;
+  --vinyl-dark: #1a1a1a;
+  --vinyl-groove: #222;
+}
+
+html { font-size: 16px; }
+body {
+  font-family: 'Noto Serif SC', 'Georgia', serif;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* ── Ambient background particles ────────────────────────── */
+#particles-canvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.4;
+}
+
+/* ── Noise texture overlay ───────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── Main layout ─────────────────────────────────────────── */
+.app-container {
+  position: relative;
+  z-index: 2;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+  min-height: 100vh;
+}
+
+/* ── Header / Brand ──────────────────────────────────────── */
+.header {
+  text-align: center;
+  margin-bottom: 48px;
+  animation: fadeInDown 1s ease;
+}
+
+.brand-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  letter-spacing: 6px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.brand-title {
+  font-size: 2.2rem;
+  font-weight: 300;
+  letter-spacing: 12px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.brand-subtitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  letter-spacing: 3px;
+}
+
+/* ── On-air indicator ────────────────────────────────────── */
+.on-air {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  padding: 6px 20px;
+  border: 1px solid var(--red-dim);
+  border-radius: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  letter-spacing: 4px;
+  color: var(--red-glow);
+  transition: all 0.3s;
+}
+
+.on-air.active {
+  border-color: var(--red-glow);
+  color: #cc6666;
+  box-shadow: 0 0 20px #8b4a4a30;
+}
+
+.on-air-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--red-dim);
+  transition: all 0.3s;
+}
+
+.on-air.active .on-air-dot {
+  background: #cc6666;
+  animation: pulse-dot 2s infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px #cc666680; }
+  50% { opacity: 0.4; box-shadow: 0 0 8px #cc666640; }
+}
+
+/* ── Context bar (weather + system) ──────────────────────── */
+.context-bar {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 40px;
+  animation: fadeIn 1.2s ease;
+}
+
+.context-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  transition: all 0.5s;
+}
+
+.context-chip .icon {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+/* ── Vinyl section ───────────────────────────────────────── */
+.vinyl-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 40px;
+  animation: fadeIn 1.5s ease;
+}
+
+.vinyl-container {
+  position: relative;
+  width: 220px; height: 220px;
+  margin-bottom: 32px;
+}
+
+.vinyl {
+  width: 220px; height: 220px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, #333 0%, #1a1a1a 3%, transparent 3.5%),
+    radial-gradient(circle at 50% 50%, transparent 28%, #1d1d1d 28.5%, #222 29.5%, transparent 30%),
+    radial-gradient(circle at 50% 50%, transparent 38%, #1d1d1d 38.5%, #222 39%, transparent 39.5%),
+    radial-gradient(circle at 50% 50%, transparent 48%, #1d1d1d 48.5%, #222 49%, transparent 49.5%),
+    radial-gradient(circle at 50% 50%, transparent 58%, #1e1e1e 58.5%, #232323 59%, transparent 59.5%),
+    radial-gradient(circle at 50% 50%, transparent 68%, #1e1e1e 68.5%, #232323 69%, transparent 69.5%),
+    conic-gradient(from 0deg, #181818, #1f1f1f, #181818, #1c1c1c, #181818, #1f1f1f, #181818);
+  box-shadow:
+    0 0 0 3px #2a2a2a,
+    0 0 40px rgba(0,0,0,0.6),
+    inset 0 0 30px rgba(0,0,0,0.4);
+  transition: transform 0.3s;
+}
+
+.vinyl.spinning {
+  animation: spin 8s linear infinite;
+}
+
+.vinyl-label {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent) 0%, #8a6040 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
+}
+
+.vinyl-label-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.45rem;
+  letter-spacing: 2px;
+  color: #1a1a1a;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.vinyl-center-dot {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #333;
+  z-index: 2;
+  box-shadow: 0 0 4px rgba(0,0,0,0.5);
+}
+
+/* Tonearm */
+.tonearm {
+  position: absolute;
+  top: -10px;
+  right: -30px;
+  width: 100px;
+  height: 4px;
+  background: linear-gradient(90deg, #555, #888);
+  border-radius: 2px;
+  transform-origin: 90% 50%;
+  transform: rotate(25deg);
+  transition: transform 1s cubic-bezier(0.23, 1, 0.32, 1);
+  z-index: 3;
+}
+
+.tonearm::before {
+  content: '';
+  position: absolute;
+  right: -4px;
+  top: -4px;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #666;
+  box-shadow: 0 0 6px rgba(0,0,0,0.3);
+}
+
+.tonearm::after {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: -2px;
+  width: 6px; height: 8px;
+  background: #aaa;
+  border-radius: 1px;
+}
+
+.tonearm.playing {
+  transform: rotate(8deg);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ── Song info ───────────────────────────────────────────── */
+.song-info {
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.song-title {
+  font-size: 1.4rem;
+  font-weight: 400;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  min-height: 1.6em;
+  transition: opacity 0.5s;
+}
+
+.song-artist {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  min-height: 1.2em;
+}
+
+.song-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+}
+
+/* ── Waveform visualizer ─────────────────────────────────── */
+.waveform-container {
+  width: 100%;
+  max-width: 500px;
+  height: 48px;
+  margin: 24px auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.wave-bar {
+  width: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  opacity: 0.5;
+  transition: height 0.15s ease, opacity 0.3s;
+}
+
+.wave-bar.active {
+  opacity: 0.9;
+}
+
+/* ── DJ Commentary ───────────────────────────────────────── */
+.commentary-section {
+  margin: 40px 0;
+  animation: fadeIn 2s ease;
+}
+
+.commentary-card {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+  overflow: hidden;
+}
+
+.commentary-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0.4;
+}
+
+.commentary-quote {
+  font-size: 0.95rem;
+  line-height: 2;
+  color: var(--text-primary);
+  font-weight: 300;
+  text-align: center;
+  min-height: 4em;
+  opacity: 0;
+  transition: opacity 0.8s;
+}
+
+.commentary-quote.visible {
+  opacity: 1;
+}
+
+.commentary-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.55rem;
+  letter-spacing: 4px;
+  color: var(--text-dim);
+  text-align: center;
+  margin-top: 20px;
+  text-transform: uppercase;
+}
+
+/* ── Reason card ─────────────────────────────────────────── */
+.reason-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin-top: 20px;
+  text-align: center;
+}
+
+.reason-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.55rem;
+  letter-spacing: 3px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.reason-text {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.8;
+  font-weight: 300;
+}
+
+/* ── Ambient tags ────────────────────────────────────────── */
+.ambient-tags {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.ambient-tag {
+  padding: 4px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+  text-transform: lowercase;
+}
+
+/* ── Controls ────────────────────────────────────────────── */
+.controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 32px;
+  margin: 40px 0;
+}
+
+.ctrl-btn {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+  font-size: 1.1rem;
+}
+
+.ctrl-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+
+.ctrl-btn.primary {
+  width: 64px; height: 64px;
+  border-color: var(--accent);
+  color: var(--accent);
+  font-size: 1.3rem;
+}
+
+.ctrl-btn.primary:hover {
+  background: var(--accent);
+  color: var(--bg-deep);
+}
+
+/* ── Volume slider ───────────────────────────────────────── */
+.volume-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.volume-icon {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.volume-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 120px;
+  height: 2px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+/* ── Progress / Timer ────────────────────────────────────── */
+.timer-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin: 16px 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+}
+
+.next-label {
+  color: var(--text-dim);
+}
+
+.countdown {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Footer ──────────────────────────────────────────────── */
+.footer {
+  text-align: center;
+  margin-top: 60px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.footer-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.55rem;
+  color: var(--text-dim);
+  letter-spacing: 3px;
+}
+
+/* ── Loading state ───────────────────────────────────────── */
+.loading-overlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: var(--bg-deep);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  transition: opacity 0.8s;
+}
+
+.loading-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loading-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 6px;
+  color: var(--text-dim);
+  animation: loadingPulse 2s infinite;
+}
+
+.loading-brand {
+  font-size: 1.8rem;
+  font-weight: 300;
+  letter-spacing: 8px;
+  color: var(--text-primary);
+  margin-bottom: 24px;
+}
+
+@keyframes loadingPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* ── Typewriter effect ───────────────────────────────────── */
+.typewriter {
+  overflow: hidden;
+  border-right: 2px solid var(--accent);
+  animation: blink-caret 1s step-end infinite;
+  display: inline;
+}
+
+@keyframes blink-caret {
+  from, to { border-color: transparent; }
+  50% { border-color: var(--accent); }
+}
+
+/* ── Animations ──────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .brand-title { font-size: 1.6rem; letter-spacing: 6px; }
+  .context-bar { gap: 8px; }
+  .commentary-card { padding: 20px; }
+  .vinyl-container { width: 180px; height: 180px; }
+  .vinyl { width: 180px; height: 180px; }
+}
+
+/* ── Glow border animation on commentary ─────────────────── */
+.commentary-card.glow {
+  border-color: var(--accent);
+  box-shadow: 0 0 30px var(--accent-glow);
+  transition: all 1s;
+}
+
+/* ── TTS controls ───────────────────────────────────────────── */
+.tts-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.tts-btn {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  transition: all 0.3s;
+}
+
+.tts-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tts-btn.speaking {
+  border-color: var(--accent);
+  color: var(--accent);
+  animation: pulse-dot 1.5s infinite;
+}
+
+.voice-select {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 4px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  color: var(--text-secondary);
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.voice-select:focus {
+  border-color: var(--accent);
+}
+
+/* ── Search (direct YouTube song search) ───────────────────── */
+.search-section {
+  margin: 28px 0 12px;
+  animation: fadeIn 2s ease;
+  position: relative;
+}
+
+.search-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.55rem;
+  letter-spacing: 3px;
+  color: var(--text-dim);
+  text-align: center;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.search-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 8px 16px;
+  transition: all 0.3s;
+}
+
+.search-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+
+.search-icon {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  margin-right: 4px;
+}
+
+.search-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-family: 'Noto Serif SC', serif;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-weight: 300;
+}
+
+.search-input::placeholder {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.search-clear {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.search-clear.visible {
+  display: flex;
+}
+
+.search-clear:hover {
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.search-results {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0; right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+  max-height: 420px;
+  overflow-y: auto;
+  z-index: 50;
+  display: none;
+  padding: 6px;
+}
+
+.search-results.visible {
+  display: block;
+  animation: fadeIn 0.2s ease;
+}
+
+.search-results::-webkit-scrollbar { width: 6px; }
+.search-results::-webkit-scrollbar-track { background: transparent; }
+.search-results::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.search-status {
+  padding: 18px 16px;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.search-result-item:hover,
+.search-result-item.active {
+  background: var(--bg-surface);
+}
+
+.search-result-thumb {
+  width: 80px;
+  height: 60px;
+  border-radius: 6px;
+  background: var(--bg-deep) center/cover no-repeat;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+
+.search-result-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-result-title {
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  font-weight: 400;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.search-result-sub {
+  margin-top: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.search-result-sub .channel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.search-result-duration {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  letter-spacing: 1px;
+}
+
+/* ── DJ Request Input ───────────────────────────────────────── */
+.request-section {
+  margin: 24px 0;
+  animation: fadeIn 2s ease;
+}
+
+.request-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 8px 16px;
+  transition: all 0.3s;
+}
+
+.request-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+
+.request-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-family: 'Noto Serif SC', serif;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  font-weight: 300;
+}
+
+.request-input::placeholder {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.request-send {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  transition: all 0.3s;
+}
+
+.request-send:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent);
+  color: var(--bg-deep);
+}
+
+.request-send:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.request-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.55rem;
+  letter-spacing: 3px;
+  color: var(--text-dim);
+  text-align: center;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+/* ── API Key Modal ──────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+.modal-overlay.visible {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.modal-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 400px;
+  width: 90%;
+}
+
+.modal-title {
+  font-size: 1.1rem;
+  font-weight: 400;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.modal-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.modal-input {
+  width: 100%;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-primary);
+  outline: none;
+  margin-bottom: 16px;
+}
+
+.modal-input:focus {
+  border-color: var(--accent);
+}
+
+.modal-btns {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.modal-btn {
+  padding: 8px 20px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  transition: all 0.3s;
+}
+
+.modal-btn.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.modal-btn.primary:hover {
+  background: var(--accent);
+  color: var(--bg-deep);
+}
+</style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div class="loading-overlay" id="loading">
+  <div class="loading-brand">蒸馏电台</div>
+  <div class="loading-text">TUNING FREQUENCY...</div>
+</div>
+
+<!-- Ambient particles -->
+<canvas id="particles-canvas"></canvas>
+
+<!-- YouTube player (visually hidden but rendered on-screen for browser autoplay policy) -->
+<div id="yt-player-wrap" style="position:fixed;bottom:0;right:0;width:320px;height:180px;opacity:0.001;z-index:-1;pointer-events:none;">
+  <div id="yt-player"></div>
+</div>
+
+<!-- Main app -->
+<div class="app-container">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="brand-label">Shanghai &middot; Late Night Broadcast</div>
+    <h1 class="brand-title">蒸 馏 电 台</h1>
+    <div class="brand-subtitle">DISTILLERY RADIO &mdash; FM 97.3</div>
+    <div class="on-air" id="on-air">
+      <span class="on-air-dot"></span>
+      ON AIR
+    </div>
+  </header>
+
+  <!-- Context chips -->
+  <div class="context-bar" id="context-bar">
+    <div class="context-chip" id="chip-weather">
+      <span class="icon">&#9729;</span>
+      <span id="ctx-weather">--</span>
+    </div>
+    <div class="context-chip" id="chip-temp">
+      <span class="icon">&#9832;</span>
+      <span id="ctx-temp">--&deg;C</span>
+    </div>
+    <div class="context-chip" id="chip-time">
+      <span class="icon">&#9202;</span>
+      <span id="ctx-time">--:--</span>
+    </div>
+    <div class="context-chip" id="chip-cpu">
+      <span class="icon">&#9881;</span>
+      <span id="ctx-cpu">CPU --%</span>
+    </div>
+    <div class="context-chip" id="chip-battery">
+      <span class="icon">&#9889;</span>
+      <span id="ctx-battery">--%</span>
+    </div>
+  </div>
+
+  <!-- Vinyl player -->
+  <div class="vinyl-section">
+    <div class="vinyl-container">
+      <div class="vinyl" id="vinyl">
+        <div class="vinyl-label">
+          <span class="vinyl-label-text">蒸馏</span>
+        </div>
+        <div class="vinyl-center-dot"></div>
+      </div>
+      <div class="tonearm" id="tonearm"></div>
+    </div>
+
+    <div class="song-info">
+      <div class="song-title" id="song-title">等待调频...</div>
+      <div class="song-artist" id="song-artist"></div>
+      <div class="song-meta" id="song-meta"></div>
+    </div>
+  </div>
+
+  <!-- Waveform -->
+  <div class="waveform-container" id="waveform"></div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button class="ctrl-btn" id="btn-skip" title="Next track">&#9197;</button>
+    <button class="ctrl-btn primary" id="btn-play" title="Play / Pause">&#9654;</button>
+    <button class="ctrl-btn" id="btn-auto" title="Auto mode">&#8734;</button>
+  </div>
+
+  <!-- Volume -->
+  <div class="volume-section">
+    <span class="volume-icon">&#128264;</span>
+    <input type="range" class="volume-slider" id="volume" min="0" max="100" value="70" />
+    <span class="volume-icon">&#128266;</span>
+  </div>
+
+  <!-- Timer -->
+  <div class="timer-section">
+    <span class="countdown" id="elapsed">00:00</span>
+    <span class="next-label" id="timer-separator">/</span>
+    <span class="countdown" id="countdown">--:--</span>
+  </div>
+
+  <!-- Search (direct YouTube) -->
+  <div class="search-section">
+    <div class="search-label">SEARCH &middot; 搜索点歌</div>
+    <div class="search-input-wrap">
+      <span class="search-icon">&#128270;</span>
+      <input type="text" class="search-input" id="search-input" placeholder="输入歌名 / 歌手 / 关键词，例如：周杰伦 晴天" autocomplete="off" />
+      <button class="search-clear" id="search-clear" title="Clear">&times;</button>
+    </div>
+    <div class="search-results" id="search-results"></div>
+  </div>
+
+  <!-- DJ Request Input -->
+  <div class="request-section">
+    <div class="request-label">REQUEST A SONG &middot; 对 DJ 说</div>
+    <div class="request-input-wrap">
+      <input type="text" class="request-input" id="request-input" placeholder="描述心情或场景，让 DJ 替你选..." />
+      <button class="request-send" id="request-send" title="Send request">&#9654;</button>
+    </div>
+  </div>
+
+  <!-- DJ Commentary -->
+  <div class="commentary-section">
+    <div class="commentary-card" id="commentary-card">
+      <div class="commentary-quote" id="commentary-text">
+        收音机的电流声中，夜晚正在酝酿...
+      </div>
+      <div class="commentary-label">DJ &middot; 蒸馏电台</div>
+      <div class="tts-controls">
+        <button class="tts-btn" id="tts-btn" title="播报">&#128264;</button>
+        <select class="voice-select" id="voice-select">
+          <option value="zh-CN-XiaoxiaoNeural">晓晓 (女)</option>
+          <option value="zh-CN-YunxiNeural">云希 (男)</option>
+          <option value="zh-CN-YunyangNeural">云扬 (男)</option>
+          <option value="zh-CN-XiaohanNeural">晓涵 (女)</option>
+          <option value="zh-CN-XiaoyiNeural">晓伊 (女)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reason -->
+  <div class="reason-card" id="reason-card">
+    <div class="reason-label">Why This Song</div>
+    <div class="reason-text" id="reason-text">正在感知你的世界...</div>
+  </div>
+
+  <!-- Ambient tags -->
+  <div class="ambient-tags" id="ambient-tags"></div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-text">
+      蒸馏电台 &copy; 2026 &mdash; WEATHER &middot; SYSTEM &middot; AI POWERED
+    </div>
+  </footer>
+
+</div>
+
+<!-- API Key Modal -->
+<div class="modal-overlay" id="api-key-modal">
+  <div class="modal-card">
+    <div class="modal-title">DeepSeek API Key</div>
+    <div class="modal-desc">
+      智能点歌需要 DeepSeek API Key（免费注册）<br/>
+      <a href="https://platform.deepseek.com" target="_blank" style="color:var(--accent)">platform.deepseek.com</a>
+    </div>
+    <input type="password" class="modal-input" id="api-key-input" placeholder="sk-..." />
+    <div class="modal-btns">
+      <button class="modal-btn" id="modal-cancel">取消</button>
+      <button class="modal-btn primary" id="modal-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── YouTube IFrame API ─────────────────────────────────────────
+let ytPlayer = null;
+let ytReady = false;
+let ytPendingVideoId = null;
+let progressInterval = null;
+
+// Load YouTube IFrame API
+const ytScript = document.createElement('script');
+ytScript.src = 'https://www.youtube.com/iframe_api';
+document.head.appendChild(ytScript);
+
+window.onYouTubeIframeAPIReady = function () {
+  ytPlayer = new YT.Player('yt-player', {
+    height: '180',
+    width: '320',
+    playerVars: {
+      autoplay: 0,
+      controls: 0,
+      disablekb: 1,
+      fs: 0,
+      rel: 0,
+      modestbranding: 1,
+      origin: window.location.origin,
+      playsinline: 1,
+    },
+    events: {
+      onReady: () => {
+        ytReady = true;
+        console.log('[YT] Player ready!');
+        ytPlayer.setVolume(parseInt(document.getElementById('volume').value));
+        if (ytPendingVideoId) {
+          console.log('[YT] Loading pending video:', ytPendingVideoId);
+          loadYouTubeVideo(ytPendingVideoId);
+          ytPendingVideoId = null;
+        }
+      },
+      onStateChange: (e) => {
+        const stateNames = { '-1': 'UNSTARTED', 0: 'ENDED', 1: 'PLAYING', 2: 'PAUSED', 3: 'BUFFERING', 5: 'CUED' };
+        console.log('[YT] State:', stateNames[e.data] || e.data);
+        if (e.data === YT.PlayerState.PLAYING) {
+          if (!state.playing) togglePlay();
+          startProgressTracking();
+        } else if (e.data === YT.PlayerState.PAUSED) {
+          stopProgressTracking();
+        } else if (e.data === YT.PlayerState.ENDED) {
+          stopProgressTracking();
+          if (state.searchContext) {
+            // In search-play mode: don't auto-jump to radio. Let user pick the next song.
+            if (state.playing) togglePlay();
+          } else if (state.autoMode) {
+            fetchRadio();
+          } else {
+            if (state.playing) togglePlay();
+          }
+        } else if (e.data === YT.PlayerState.BUFFERING) {
+          songMeta.textContent += ' · buffering...';
+        }
+      },
+      onError: (e) => {
+        console.error('[YT] Error code:', e.data, '(2=invalid, 5=html5err, 100=not found, 101/150=embed blocked)');
+        handleYouTubeError(e.data);
+      },
+    },
+  });
+};
+
+function loadYouTubeVideo(videoId) {
+  if (!videoId) {
+    console.warn('[YT] No video ID provided');
+    return false;
+  }
+  if (!ytReady) {
+    console.log('[YT] Player not ready yet, queuing:', videoId);
+    ytPendingVideoId = videoId;
+    return false;
+  }
+  console.log('[YT] Loading video:', videoId, 'userInteracted:', state.userHasInteracted);
+  state.currentYouTubeId = videoId;
+  try {
+    if (state.userHasInteracted) {
+      ytPlayer.loadVideoById({ videoId: videoId, startSeconds: 0 });
+    } else {
+      ytPlayer.cueVideoById({ videoId: videoId, startSeconds: 0 });
+    }
+  } catch (e) {
+    console.error('[YT] loadVideo error:', e);
+  }
+  return true;
+}
+
+function ytPlay() {
+  if (ytReady && ytPlayer && ytPlayer.playVideo) ytPlayer.playVideo();
+}
+function ytPause() {
+  if (ytReady && ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
+}
+function ytSetVolume(v) {
+  if (ytReady && ytPlayer && ytPlayer.setVolume) ytPlayer.setVolume(v);
+}
+
+function startProgressTracking() {
+  stopProgressTracking();
+  progressInterval = setInterval(updateProgress, 1000);
+  updateProgress(); // immediate first update
+}
+function stopProgressTracking() {
+  if (progressInterval) {
+    clearInterval(progressInterval);
+    progressInterval = null;
+  }
+}
+function updateProgress() {
+  if (!ytReady || !ytPlayer || !ytPlayer.getDuration) return;
+  const dur = ytPlayer.getDuration();
+  const cur = ytPlayer.getCurrentTime();
+  if (dur <= 0) return;
+
+  const elapsedEl = document.getElementById('elapsed');
+  const eM = Math.floor(cur / 60);
+  const eS = Math.floor(cur % 60);
+  elapsedEl.textContent = `${String(eM).padStart(2, '0')}:${String(eS).padStart(2, '0')}`;
+
+  const rem = Math.max(0, Math.ceil(dur - cur));
+  const rM = Math.floor(rem / 60);
+  const rS = rem % 60;
+  countdownEl.textContent = `${String(rM).padStart(2, '0')}:${String(rS).padStart(2, '0')}`;
+}
+
+async function handleYouTubeError(code) {
+  console.error('[YT] Error:', code);
+
+  // If we're playing a result from the search panel, try the next embeddable result
+  if (state.searchContext && [101, 150, 2, 100].includes(code)) {
+    const ctx = state.searchContext;
+    if (ctx.cursor + 1 < ctx.items.length) {
+      ctx.cursor += 1;
+      const nextItem = ctx.items[ctx.cursor];
+      console.log('[YT] Search item blocked, trying next:', nextItem.title);
+      songMeta.textContent = '上一首被屏蔽，切到下一条结果…';
+      setTimeout(() => playSearchItem(nextItem, { fromFallback: true }), 250);
+      return;
+    } else {
+      songMeta.textContent += ' · 没有可播放的搜索结果了';
+      ctx.exhausted = true;
+      if (state.playing) togglePlay();
+      return;
+    }
+  }
+
+  const song = state.currentData?.radio?.song;
+  if (!song) return;
+
+  // Report to server to clear bad cache entry
+  fetch('/api/youtube-error', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: song.title,
+      artist: song.artist,
+      errorCode: code,
+    }),
+  }).catch(() => {});
+
+  // Error 101/150 = embed blocked, try fallback search for an embeddable version
+  if ([101, 150].includes(code)) {
+    console.log('[YT] Embed blocked, trying fallback search...');
+    songMeta.textContent += ' · finding alt source...';
+    tryFallbackYouTubeId(song.title, song.artist);
+    return;
+  }
+
+  songMeta.textContent += ' · audio unavailable';
+
+  // Auto-advance after 3 seconds
+  if (state.autoMode) {
+    setTimeout(() => fetchRadio(), 3000);
+  }
+}
+
+async function tryFallbackYouTubeId(title, artist) {
+  try {
+    const res = await fetch(
+      `/api/youtube-id?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`
+    );
+    const { youtubeId } = await res.json();
+    if (youtubeId) {
+      loadYouTubeVideo(youtubeId);
+    } else {
+      songMeta.textContent += ' · audio unavailable';
+      if (state.autoMode) setTimeout(fetchRadio, 10000);
+    }
+  } catch {
+    /* skip gracefully */
+  }
+}
+
+// ── State ───────────────────────────────────────────────────────
+const state = {
+  playing: false,
+  autoMode: true,
+  currentData: null,
+  loading: false,
+  userHasInteracted: false,
+  currentYouTubeId: null,
+  searchContext: null,
+};
+
+// Track user interaction for autoplay policy
+function markUserInteracted() {
+  if (!state.userHasInteracted) {
+    state.userHasInteracted = true;
+    // If we have a cued video, start playing it
+    if (ytReady && ytPlayer && state.currentYouTubeId) {
+      ytPlayer.playVideo();
+    }
+    // Remove unmute hint if present
+    const hint = document.getElementById('unmute-hint');
+    if (hint) hint.remove();
+  }
+}
+document.addEventListener('click', markUserInteracted, { once: false });
+document.addEventListener('touchstart', markUserInteracted, { once: false });
+
+// ── DOM refs ────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const vinyl = $('vinyl');
+const tonearm = $('tonearm');
+const onAir = $('on-air');
+const btnPlay = $('btn-play');
+const btnSkip = $('btn-skip');
+const btnAuto = $('btn-auto');
+const commentaryText = $('commentary-text');
+const commentaryCard = $('commentary-card');
+const songTitle = $('song-title');
+const songArtist = $('song-artist');
+const songMeta = $('song-meta');
+const reasonText = $('reason-text');
+const countdownEl = $('countdown');
+const elapsedEl = $('elapsed');
+const ambientTags = $('ambient-tags');
+const waveform = $('waveform');
+const loadingOverlay = $('loading');
+
+// ── Waveform bars ───────────────────────────────────────────────
+const BAR_COUNT = 64;
+for (let i = 0; i < BAR_COUNT; i++) {
+  const bar = document.createElement('div');
+  bar.className = 'wave-bar';
+  bar.style.height = '4px';
+  waveform.appendChild(bar);
+}
+const waveBars = waveform.querySelectorAll('.wave-bar');
+
+function animateWaveform() {
+  waveBars.forEach((bar, i) => {
+    if (state.playing) {
+      const h = 4 + Math.random() * 36 * (0.5 + 0.5 * Math.sin(Date.now() / 400 + i * 0.3));
+      bar.style.height = h + 'px';
+      bar.classList.add('active');
+    } else {
+      const h = 3 + Math.sin(Date.now() / 2000 + i * 0.2) * 2;
+      bar.style.height = h + 'px';
+      bar.classList.remove('active');
+    }
+  });
+  requestAnimationFrame(animateWaveform);
+}
+animateWaveform();
+
+// ── Particles ───────────────────────────────────────────────────
+const canvas = $('particles-canvas');
+const ctx = canvas.getContext('2d');
+let particles = [];
+
+function initParticles() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  particles = [];
+  const count = Math.floor((canvas.width * canvas.height) / 12000);
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5) * 0.15,
+      vy: -Math.random() * 0.3 - 0.05,
+      size: Math.random() * 1.5 + 0.5,
+      alpha: Math.random() * 0.4 + 0.1,
+    });
+  }
+}
+
+function drawParticles() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  particles.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(196, 149, 106, ${p.alpha})`;
+    ctx.fill();
+    p.x += p.vx;
+    p.y += p.vy;
+    if (p.y < -10) { p.y = canvas.height + 10; p.x = Math.random() * canvas.width; }
+    if (p.x < -10) p.x = canvas.width + 10;
+    if (p.x > canvas.width + 10) p.x = -10;
+  });
+  requestAnimationFrame(drawParticles);
+}
+
+initParticles();
+drawParticles();
+window.addEventListener('resize', initParticles);
+
+// ── Context display ─────────────────────────────────────────────
+function updateContext(data) {
+  if (!data) return;
+  const { weather, system, time } = data;
+  $('ctx-weather').textContent = weather.desc;
+  $('ctx-temp').textContent = weather.temp_c + '\u00B0C';
+  $('ctx-time').textContent = time.formatted;
+  $('ctx-cpu').textContent = 'CPU ' + system.cpu_load_percent + '%';
+  $('ctx-battery').textContent = system.battery_percent + '%' + (system.battery_charging ? ' \u26A1' : '');
+}
+
+// ── Typewriter effect ───────────────────────────────────────────
+function typewriter(element, text, speed = 50) {
+  return new Promise(resolve => {
+    element.textContent = '';
+    element.classList.add('visible');
+    let i = 0;
+    const type = () => {
+      if (i < text.length) {
+        element.textContent += text.charAt(i);
+        i++;
+        setTimeout(type, speed);
+      } else {
+        resolve();
+      }
+    };
+    type();
+  });
+}
+
+// ── Update radio content ────────────────────────────────────────
+async function fetchRadio() {
+  if (state.loading) return;
+  state.loading = true;
+
+  // Dim current content
+  songTitle.style.opacity = '0.3';
+  commentaryText.classList.remove('visible');
+
+  // Radio overrides any previous search-context fallback chain
+  state.searchContext = null;
+
+  try {
+    const res = await fetch('/api/radio');
+    const data = await res.json();
+    state.currentData = data;
+
+    // Update context chips
+    updateContext(data);
+
+    const { radio } = data;
+
+    // Update song info with fade
+    setTimeout(() => {
+      songTitle.textContent = radio.song.title;
+      songTitle.style.opacity = '1';
+      songArtist.textContent = radio.song.artist;
+      songMeta.textContent = `${radio.song.album} \u00B7 ${radio.song.year} \u00B7 ${radio.song.genre}`;
+    }, 300);
+
+    // Typewriter the DJ commentary
+    setTimeout(() => {
+      typewriter(commentaryText, radio.commentary, 60);
+    }, 800);
+
+    // Glow effect
+    commentaryCard.classList.add('glow');
+    setTimeout(() => commentaryCard.classList.remove('glow'), 3000);
+
+    // Update reason
+    reasonText.textContent = radio.song.reason;
+
+    // Update ambient tags
+    ambientTags.innerHTML = '';
+    (radio.ambient_tags || []).forEach(tag => {
+      const el = document.createElement('span');
+      el.className = 'ambient-tag';
+      el.textContent = tag;
+      ambientTags.appendChild(el);
+    });
+
+    // Reset progress display
+    elapsedEl.textContent = '00:00';
+    countdownEl.textContent = '--:--';
+
+    // Load YouTube video for real playback
+    if (radio.song.youtubeId) {
+      loadYouTubeVideo(radio.song.youtubeId);
+    } else {
+      // Try fallback search
+      tryFallbackYouTubeId(radio.song.title, radio.song.artist);
+    }
+
+    // Ensure playing state
+    if (!state.playing) togglePlay();
+
+  } catch (e) {
+    console.error('Radio fetch error:', e);
+    songTitle.textContent = '信号中断...';
+    songTitle.style.opacity = '1';
+  } finally {
+    state.loading = false;
+  }
+}
+
+// ── Play/Pause toggle ───────────────────────────────────────────
+function togglePlay() {
+  state.playing = !state.playing;
+  vinyl.classList.toggle('spinning', state.playing);
+  tonearm.classList.toggle('playing', state.playing);
+  onAir.classList.toggle('active', state.playing);
+  btnPlay.innerHTML = state.playing ? '&#10074;&#10074;' : '&#9654;';
+
+  // Control real YouTube audio
+  if (state.playing) {
+    ytPlay();
+    startProgressTracking();
+  } else {
+    ytPause();
+    stopProgressTracking();
+  }
+}
+
+// ── Event listeners ─────────────────────────────────────────────
+btnPlay.addEventListener('click', togglePlay);
+
+btnSkip.addEventListener('click', () => {
+  fetchRadio();
+});
+
+btnAuto.addEventListener('click', () => {
+  state.autoMode = !state.autoMode;
+  btnAuto.style.color = state.autoMode ? 'var(--accent)' : 'var(--text-dim)';
+  btnAuto.style.borderColor = state.autoMode ? 'var(--accent)' : 'var(--border)';
+});
+
+// Volume control
+document.getElementById('volume').addEventListener('input', (e) => {
+  ytSetVolume(parseInt(e.target.value));
+});
+
+// Auto mode starts active
+btnAuto.style.color = 'var(--accent)';
+btnAuto.style.borderColor = 'var(--accent)';
+
+// ── TTS (Text-to-Speech) ───────────────────────────────────────────
+const ttsBtn = $('tts-btn');
+const voiceSelect = $('voice-select');
+let ttsAudio = null;
+let ttsSpeaking = false;
+
+// Load saved voice preference
+const savedVoice = localStorage.getItem('tts-voice');
+if (savedVoice) voiceSelect.value = savedVoice;
+
+voiceSelect.addEventListener('change', () => {
+  localStorage.setItem('tts-voice', voiceSelect.value);
+});
+
+async function speakCommentary(text) {
+  if (!text || ttsSpeaking) return;
+
+  ttsSpeaking = true;
+  ttsBtn.classList.add('speaking');
+  ttsBtn.innerHTML = '&#9632;'; // stop icon
+
+  // Lower music volume during TTS
+  const currentVol = parseInt(document.getElementById('volume').value);
+  ytSetVolume(Math.floor(currentVol * 0.3));
+
+  try {
+    const res = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: text,
+        voice: voiceSelect.value,
+      }),
+    });
+
+    if (!res.ok) throw new Error('TTS request failed');
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    ttsAudio = new Audio(url);
+    ttsAudio.volume = 0.9;
+
+    ttsAudio.onended = () => {
+      stopTTS();
+      // Restore music volume
+      ytSetVolume(currentVol);
+    };
+
+    ttsAudio.onerror = () => {
+      stopTTS();
+      ytSetVolume(currentVol);
+    };
+
+    await ttsAudio.play();
+  } catch (e) {
+    console.error('TTS error:', e);
+    stopTTS();
+    ytSetVolume(currentVol);
+  }
+}
+
+function stopTTS() {
+  if (ttsAudio) {
+    ttsAudio.pause();
+    ttsAudio.src = '';
+    ttsAudio = null;
+  }
+  ttsSpeaking = false;
+  ttsBtn.classList.remove('speaking');
+  ttsBtn.innerHTML = '&#128264;';
+}
+
+ttsBtn.addEventListener('click', () => {
+  if (ttsSpeaking) {
+    const currentVol = parseInt(document.getElementById('volume').value);
+    ytSetVolume(currentVol);
+    stopTTS();
+  } else {
+    const text = commentaryText.textContent;
+    if (text && text !== '收音机的电流声中，夜晚正在酝酿...') {
+      speakCommentary(text);
+    }
+  }
+});
+
+// ── DJ Request (LLM-powered song request) ──────────────────────────
+const requestInput = $('request-input');
+const requestSend = $('request-send');
+const apiKeyModal = $('api-key-modal');
+const apiKeyInput = $('api-key-input');
+const modalCancel = $('modal-cancel');
+const modalSave = $('modal-save');
+let hasDeepSeekKey = false;
+
+// Check if API key is configured
+async function checkApiKeyStatus() {
+  try {
+    const res = await fetch('/api/config-status');
+    const data = await res.json();
+    hasDeepSeekKey = data.hasDeepSeekKey;
+  } catch { /* ignore */ }
+}
+
+function showApiKeyModal() {
+  apiKeyModal.classList.add('visible');
+  apiKeyInput.focus();
+}
+
+function hideApiKeyModal() {
+  apiKeyModal.classList.remove('visible');
+}
+
+modalCancel.addEventListener('click', hideApiKeyModal);
+modalSave.addEventListener('click', async () => {
+  const key = apiKeyInput.value.trim();
+  if (!key) return;
+  try {
+    await fetch('/api/set-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deepseekKey: key }),
+    });
+    hasDeepSeekKey = true;
+    hideApiKeyModal();
+    // Retry the pending request
+    if (requestInput.value.trim()) {
+      sendSongRequest(requestInput.value.trim());
+    }
+  } catch { /* ignore */ }
+});
+
+async function sendSongRequest(instruction) {
+  if (!instruction || state.loading) return;
+
+  if (!hasDeepSeekKey) {
+    showApiKeyModal();
+    return;
+  }
+
+  state.loading = true;
+  requestSend.disabled = true;
+  requestInput.disabled = true;
+  state.searchContext = null;
+
+  // Visual feedback
+  songTitle.style.opacity = '0.3';
+  commentaryText.classList.remove('visible');
+  requestInput.value = '';
+
+  try {
+    const res = await fetch('/api/request-song', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instruction }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      if (err.error && err.error.includes('API key')) {
+        hasDeepSeekKey = false;
+        showApiKeyModal();
+        return;
+      }
+      throw new Error(err.error || 'Request failed');
+    }
+
+    const data = await res.json();
+    state.currentData = data;
+    updateContext(data);
+
+    const { radio } = data;
+
+    // Update song info
+    setTimeout(() => {
+      songTitle.textContent = radio.song.title;
+      songTitle.style.opacity = '1';
+      songArtist.textContent = radio.song.artist;
+      songMeta.textContent = `${radio.song.album} \u00B7 ${radio.song.year} \u00B7 ${radio.song.genre}`;
+    }, 300);
+
+    // Typewriter the DJ commentary
+    setTimeout(() => {
+      typewriter(commentaryText, radio.commentary, 60).then(() => {
+        // Auto-speak after typewriter finishes
+        speakCommentary(radio.commentary);
+      });
+    }, 500);
+
+    // Glow effect
+    commentaryCard.classList.add('glow');
+    setTimeout(() => commentaryCard.classList.remove('glow'), 3000);
+
+    // Update reason
+    reasonText.textContent = radio.song.reason;
+
+    // Update ambient tags
+    ambientTags.innerHTML = '';
+    (radio.ambient_tags || []).forEach(tag => {
+      const el = document.createElement('span');
+      el.className = 'ambient-tag';
+      el.textContent = tag;
+      ambientTags.appendChild(el);
+    });
+
+    // Reset progress
+    elapsedEl.textContent = '00:00';
+    countdownEl.textContent = '--:--';
+
+    // Play
+    if (radio.song.youtubeId) {
+      loadYouTubeVideo(radio.song.youtubeId);
+    } else {
+      tryFallbackYouTubeId(radio.song.title, radio.song.artist);
+    }
+
+    if (!state.playing) togglePlay();
+
+  } catch (e) {
+    console.error('Request-song error:', e);
+    songTitle.textContent = '请求失败...';
+    songTitle.style.opacity = '1';
+  } finally {
+    state.loading = false;
+    requestSend.disabled = false;
+    requestInput.disabled = false;
+  }
+}
+
+requestSend.addEventListener('click', () => {
+  sendSongRequest(requestInput.value.trim());
+});
+
+requestInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendSongRequest(requestInput.value.trim());
+  }
+});
+
+// ── Direct YouTube search (search & play) ──────────────────────
+const searchInput = $('search-input');
+const searchClear = $('search-clear');
+const searchResults = $('search-results');
+let searchDebounceTimer = null;
+let searchAbortCtrl = null;
+let searchSeq = 0;
+let searchActiveIdx = -1;
+let searchCurrentItems = [];
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function showSearchStatus(msg) {
+  searchResults.innerHTML = `<div class="search-status">${escapeHtml(msg)}</div>`;
+  searchResults.classList.add('visible');
+}
+
+function hideSearchResults() {
+  searchResults.classList.remove('visible');
+  searchActiveIdx = -1;
+}
+
+function renderSearchResults(items) {
+  searchCurrentItems = items;
+  searchActiveIdx = -1;
+  if (!items.length) {
+    showSearchStatus('没有结果，换个关键词试试');
+    return;
+  }
+  searchResults.innerHTML = items.map((it, i) => `
+    <div class="search-result-item" data-idx="${i}">
+      <div class="search-result-thumb" style="background-image:url('${escapeHtml(it.thumbnail)}')"></div>
+      <div class="search-result-meta">
+        <div class="search-result-title">${escapeHtml(it.title)}</div>
+        <div class="search-result-sub">
+          <span class="channel">${escapeHtml(it.channel || '')}</span>
+        </div>
+      </div>
+      <div class="search-result-duration">${escapeHtml(it.durationText || '')}</div>
+    </div>
+  `).join('');
+  searchResults.classList.add('visible');
+}
+
+async function runSearch(q) {
+  if (!q) { hideSearchResults(); return; }
+  if (searchAbortCtrl) searchAbortCtrl.abort();
+  searchAbortCtrl = new AbortController();
+  const mySeq = ++searchSeq;
+  showSearchStatus('搜索中…');
+  try {
+    const res = await fetch('/api/search?q=' + encodeURIComponent(q), { signal: searchAbortCtrl.signal });
+    if (mySeq !== searchSeq) return;
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showSearchStatus('搜索失败：' + (err.error || res.status));
+      return;
+    }
+    const data = await res.json();
+    renderSearchResults(data.items || []);
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    if (mySeq !== searchSeq) return;
+    showSearchStatus('搜索失败：' + e.message);
+  }
+}
+
+function playSearchItem(item, opts = {}) {
+  if (!item || !item.videoId) return;
+  if (!opts.fromFallback) {
+    // Set up fallback chain so embed-blocked items skip to the next result
+    const idx = searchCurrentItems.indexOf(item);
+    state.searchContext = {
+      items: searchCurrentItems.slice(),
+      cursor: idx >= 0 ? idx : 0,
+    };
+    state.currentData = null; // disable radio-style fallback path
+    hideSearchResults();
+    searchInput.blur();
+  }
+
+  state.userHasInteracted = true;
+
+  songTitle.textContent = item.title || '';
+  songTitle.style.opacity = '1';
+  songArtist.textContent = item.channel || '';
+  const parts = [];
+  if (item.durationText) parts.push(item.durationText);
+  if (typeof item.views === 'number' && item.views > 0) {
+    parts.push(item.views.toLocaleString() + ' views');
+  }
+  parts.push('YouTube');
+  songMeta.textContent = parts.join(' \u00B7 ');
+
+  const blurb = `你点了《${item.title}》——蒸馏电台为你切到这一首。`;
+  typewriter(commentaryText, blurb, 50);
+  if (commentaryCard) {
+    commentaryCard.classList.add('glow');
+    setTimeout(() => commentaryCard.classList.remove('glow'), 3000);
+  }
+
+  reasonText.textContent = '来自你的搜索：' + (item.title || '');
+  ambientTags.innerHTML = '';
+
+  elapsedEl.textContent = '00:00';
+  countdownEl.textContent = '--:--';
+
+  loadYouTubeVideo(item.videoId);
+  if (!state.playing) togglePlay();
+}
+
+searchInput.addEventListener('input', () => {
+  const q = searchInput.value.trim();
+  searchClear.classList.toggle('visible', q.length > 0);
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  if (!q) { hideSearchResults(); return; }
+  searchDebounceTimer = setTimeout(() => runSearch(q), 300);
+});
+
+searchInput.addEventListener('keydown', (e) => {
+  const items = searchCurrentItems || [];
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (searchActiveIdx >= 0 && items[searchActiveIdx]) {
+      playSearchItem(items[searchActiveIdx]);
+    } else if (items[0]) {
+      playSearchItem(items[0]);
+    } else {
+      // no results yet, force immediate search
+      const q = searchInput.value.trim();
+      if (q) runSearch(q);
+    }
+  } else if (e.key === 'ArrowDown') {
+    if (!items.length) return;
+    e.preventDefault();
+    searchActiveIdx = (searchActiveIdx + 1) % items.length;
+    updateSearchHover();
+  } else if (e.key === 'ArrowUp') {
+    if (!items.length) return;
+    e.preventDefault();
+    searchActiveIdx = (searchActiveIdx - 1 + items.length) % items.length;
+    updateSearchHover();
+  } else if (e.key === 'Escape') {
+    hideSearchResults();
+    searchInput.blur();
+  }
+});
+
+function updateSearchHover() {
+  const nodes = searchResults.querySelectorAll('.search-result-item');
+  nodes.forEach((n, i) => n.classList.toggle('active', i === searchActiveIdx));
+  const active = nodes[searchActiveIdx];
+  if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+searchResults.addEventListener('click', (e) => {
+  const row = e.target.closest('.search-result-item');
+  if (!row) return;
+  const idx = parseInt(row.dataset.idx, 10);
+  const item = searchCurrentItems[idx];
+  if (item) playSearchItem(item);
+});
+
+searchClear.addEventListener('click', () => {
+  searchInput.value = '';
+  searchClear.classList.remove('visible');
+  hideSearchResults();
+  searchInput.focus();
+});
+
+// Hide results when clicking outside the search section
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.search-section')) hideSearchResults();
+});
+
+searchInput.addEventListener('focus', () => {
+  if (searchCurrentItems && searchCurrentItems.length) {
+    searchResults.classList.add('visible');
+  }
+});
+
+// ── Boot sequence ───────────────────────────────────────────────
+function showUnmuteHint() {
+  const hint = document.createElement('div');
+  hint.id = 'unmute-hint';
+  hint.innerHTML = '&#128264; click to enable audio';
+  hint.style.cssText = `
+    text-align:center; font-family:'JetBrains Mono',monospace;
+    font-size:0.6rem; color:var(--accent); letter-spacing:2px;
+    margin:8px 0; animation:loadingPulse 2s infinite; cursor:pointer;
+  `;
+  const volSection = document.querySelector('.volume-section');
+  if (volSection) volSection.after(hint);
+}
+
+async function boot() {
+  // Show loading for atmosphere
+  await new Promise(r => setTimeout(r, 1500));
+
+  // Check API key status
+  await checkApiKeyStatus();
+
+  // Fetch first radio content
+  await fetchRadio();
+
+  // Hide loading
+  loadingOverlay.classList.add('hidden');
+
+  // Show unmute hint if user hasn't interacted yet
+  if (!state.userHasInteracted) {
+    showUnmuteHint();
+  }
+}
+
+boot();
+
+// ── Clock update ────────────────────────────────────────────────
+setInterval(() => {
+  const now = new Date();
+  const sh = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+  const h = sh.getHours().toString().padStart(2, '0');
+  const m = sh.getMinutes().toString().padStart(2, '0');
+  $('ctx-time').textContent = h + ':' + m;
+}, 30000);
+</script>
+</body>
+</html>

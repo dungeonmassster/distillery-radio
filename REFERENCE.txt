@@ -1,0 +1,310 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║         DISTILLERY RADIO - QUICK REFERENCE CARD                           ║
+║         YouTube Integration for Actual Music Playback                      ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ SONG DATA STRUCTURE - WHAT TO ADD                                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+BEFORE (Current):
+  {
+    title: "Gymnopdie No.1",
+    artist: "Erik Satie",
+    album: "Gymnopedies",
+    year: "1888",
+    genre: "Classical",
+    moods: ["serene","melancholy","night","rainy","quiet"],
+    weight: { deep_night: 9, late_night: 8, rain: 7, low_load: 8 }
+  }
+
+AFTER (YouTube Integration):
+  {
+    title: "Gymnopdie No.1",
+    artist: "Erik Satie",
+    album: "Gymnopedies",
+    year: "1888",
+    genre: "Classical",
+    moods: ["serene","melancholy","night","rainy","quiet"],
+    weight: { deep_night: 9, late_night: 8, rain: 7, low_load: 8 },
+    youtubeId: "SnzJ1Ci_pIk",        ← ADD THIS
+    duration: 218                     ← ADD THIS
+  }
+
+WHERE: src/server.js, lines 101-177 (SONGS array)
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ KEY FUNCTIONS & THEIR CHANGES                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1. generateRadioContent() [server.js, line 446]
+   MODIFY: Add youtubeId and duration to response.song
+
+2. fetchRadio() [index.html, line 879]
+   MODIFY: Call player.cueVideoById() to load video
+   MODIFY: Set countdown to actual video duration
+
+3. togglePlay() [index.html, line 942]
+   MODIFY: Call player.playVideo() or player.pauseVideo()
+
+4. tickCountdown() [index.html, line 951]
+   MODIFY: Check player state, sync to actual video end
+
+5. (NEW) Volume Handler [index.html, after line 981]
+   ADD: Event listener for #volume slider → player.setVolume()
+
+6. (NEW) Player Init [index.html, after line 759]
+   ADD: onYouTubeIframeAPIReady() + player setup code
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ HTML ELEMENTS TO ADD/MODIFY                                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+In <head> (before </head>, around line 630):
+  <script async defer src="https://www.youtube.com/iframe_api"></script>
+
+In <body>, before waveform (around line 700):
+  <div id="youtube-player" style="display:none;"></div>
+
+Existing elements that will get event handlers:
+  <input type="range" class="volume-slider" id="volume" ... />
+  <button class="ctrl-btn primary" id="btn-play" ... />
+  <button class="ctrl-btn" id="btn-skip" ... />
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STATE OBJECT - TRACK PLAYER STATUS                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Current (lines 752-759):
+  const state = {
+    playing: false,
+    autoMode: true,
+    autoInterval: 180,
+    countdown: 0,
+    currentData: null,
+    loading: false,
+  };
+
+ADD AFTER (new section):
+  let player;
+  let playerReady = false;
+
+This tracks:
+  - player: The YT.Player instance
+  - playerReady: Whether YouTube API has initialized
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ EXECUTION FLOW - FROM CLICK TO AUDIO                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1. Page loads
+   → YouTube IFrame API loads
+   → onYouTubeIframeAPIReady() called
+   → player created, playerReady = true
+
+2. User clicks Play button
+   → togglePlay() called
+   → state.playing toggled
+   → player.playVideo() called
+   → Vinyl starts spinning (CSS animation)
+   → Waveform becomes active
+   → Audio plays from YouTube
+
+3. Countdown hits 0 (after song ends)
+   → fetchRadio() called
+   → New song selected from SONGS
+   → New youtubeId received from server
+   → player.cueVideoById(newId) called
+   → Countdown reset to new video duration
+   → Auto-play starts next song
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ IMPORTANT DOM ELEMENT IDs USED                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+ID                  Element Type     Used For
+─────────────────   ──────────────   ─────────────────────────
+youtube-player      <div>            YouTube player container (NEW)
+volume              <input range>    Volume control slider
+btn-play            <button>         Play/pause button
+btn-skip            <button>         Skip to next song
+btn-auto            <button>         Auto-mode toggle
+vinyl               <div>            Vinyl record (CSS spinner)
+tonearm             <div>            Tonearm (CSS rotator)
+on-air              <div>            On-air indicator
+song-title          <div>            Song title display
+song-artist         <div>            Artist name display
+song-meta           <div>            Album/year/genre display
+commentary-text     <div>            DJ commentary (typewriter)
+commentary-card     <div>            Commentary container (glow effect)
+reason-text         <div>            "Why this song" text
+countdown           <div>            Timer display (MM:SS)
+ambient-tags        <div>            Context tags container
+waveform            <div>            Waveform animation container
+ctx-time            <span>           Context: current time
+ctx-temp            <span>           Context: temperature
+ctx-weather         <span>           Context: weather desc
+ctx-cpu             <span>           Context: CPU usage
+ctx-battery         <span>           Context: battery %
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ YOUTUBE IFRAME API - KEY METHODS YOU'LL USE                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+player.cueVideoById(videoId)
+  → Load a video without playing
+  → Use this in fetchRadio()
+
+player.playVideo()
+  → Start playing the cued video
+  → Use this in togglePlay()
+
+player.pauseVideo()
+  → Pause the video
+  → Use this in togglePlay()
+
+player.setVolume(0-100)
+  → Set volume level
+  → Use in volume slider handler
+
+player.getDuration()
+  → Get video length in seconds
+  → Use to sync countdown
+
+player.getCurrentTime()
+  → Get current playback position
+  → Optional: use for waveform visualization
+
+player.getPlayerState()
+  → Return: -1 (unstarted), 0 (ended), 1 (playing), 2 (paused), 3 (buffering)
+  → Use to check if video finished
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ WAVEFORM ANIMATION - CURRENTLY FAKE, CAN BE ENHANCED                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Current (lines 790-804):
+  - Random heights when playing
+  - Sine wave when paused
+  - NO connection to actual audio
+
+Optional Enhancement:
+  - Get player.getCurrentTime() / getDuration()
+  - Use ratio to shift animation phase
+  - Result: waveform "flows" through the song
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ API RESPONSE - WHAT SERVER SENDS                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+GET /api/radio returns:
+{
+  weather: { temp_c, humidity, desc, windspeed_kmh, ... },
+  system: { cpu_load_percent, mem_percent, battery_percent, ... },
+  time: { period, formatted, isWeekend, ... },
+  radio: {
+    commentary: "Chinese text about the song + context",
+    song: {
+      title: "Song Name",
+      artist: "Artist Name",
+      album: "Album Name",
+      year: "Year",
+      genre: "Genre",
+      mood: "Primary mood tag",
+      reason: "Why this song fits",
+      youtubeId: "VIDEO_ID",    ← ADD THIS
+      duration: 218              ← ADD THIS
+    },
+    ambient_tags: ["tag1", "tag2", "tag3"]
+  }
+}
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ERROR HANDLING - WHAT CAN GO WRONG                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Error: "player is not defined"
+  → Cause: player.playVideo() called before onYouTubeIframeAPIReady()
+  → Fix: Check if (playerReady && player) before calling
+
+Error: "No audio plays"
+  → Cause: youtubeId missing or wrong, video blocked, CORS issue
+  → Fix: Check console.log(), verify video ID on youtube.com
+
+Error: "Countdown doesn't match video length"
+  → Cause: duration field missing from song
+  → Fix: Add duration (in seconds) to each SONGS entry
+
+Error: "Volume slider doesn't work"
+  → Cause: No event listener added to #volume element
+  → Fix: Add volume handler code after line 981
+
+Error: "Waveform stays still"
+  → Cause: state.playing not set correctly
+  → Fix: Verify togglePlay() is called from button click
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ TESTING CHECKLIST                                                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+□ Page loads without errors in console
+□ YouTube player initializes (playerReady becomes true)
+□ Click Play → audio plays from speaker
+□ Click Pause → audio stops
+□ Volume slider changes YouTube volume
+□ Skip button → stops current video, loads next
+□ Auto-mode countdown syncs to video length
+□ Video ends → next track auto-plays
+□ Vinyl stops spinning when paused
+□ Waveform is active when playing, gentle when paused
+□ DJ commentary appears
+□ Context chips update (weather, CPU, battery, time)
+□ Ambient tags display
+□ Reason text explains why this song
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FILE SIZES & COMPLEXITY                                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+File              Size    Lines   Complexity    What to Modify
+────────────────  ────    ─────   ───────────   ───────────────
+src/server.js     12KB    495     Low-Medium    SONGS array, generateRadioContent()
+public/index.html 31KB    1008    Medium        JavaScript handlers, HTML
+package.json      ~1KB    25      Very Low      No changes needed
+public/style      ~30KB   629     Low           No changes needed (CSS is great!)
+
+Time Estimate:
+  Phase 1 (song data): 2-4 hours (find 77 video IDs)
+  Phase 2 (server):    5 minutes
+  Phase 3 (client):    30 minutes
+  Phase 4 (testing):   15-30 minutes
+  TOTAL:              3-5 hours
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ REMEMBER                                                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+✨ This is a BEAUTIFULLY DESIGNED app
+   - The DJ commentary is genius (contextual Chinese text)
+   - The mood algorithm is smart (weather + system + time)
+   - The UI is gorgeous (vinyl, waveform, typography)
+   
+🎯 Your job is to ADD actual audio playback without breaking the UX
+
+🚀 Start simple:
+   - Test with 3-5 songs first
+   - Get the YouTube player working
+   - Then scale to all 77 songs
+
+📚 Documentation files in this directory:
+   - ANALYSIS.md (architecture breakdown)
+   - DATA_FLOW.md (visual flow diagrams)
+   - YOUTUBE_INTEGRATION.md (exact code changes)
+   - QUICK_START.md (implementation roadmap)
+   - REFERENCE.txt (this file!)
+
+═════════════════════════════════════════════════════════════════════════════
+
+Generated: 2026-04-25
+For: YouTube Integration Phase
+Created by: Claude Code

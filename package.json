@@ -1,0 +1,18 @@
+{
+  "name": "playlist-distillery-radio",
+  "version": "1.0.0",
+  "description": "Deep night radio - auto DJ based on weather, time & system state",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "msedge-tts": "^2.0.5",
+    "openai": "^6.34.0",
+    "systeminformation": "^5.23.0",
+    "youtube-sr": "^4.3.12"
+  }
+}
