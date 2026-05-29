@@ -1293,7 +1293,25 @@ body::before {
 
 <script>
 // ── Mobile / failed-video guards ────────────────────────────────
-const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+// "Mobile mode" means we play it safe: never autoplay, render YT native
+// controls, let the user manually tap. We trigger it when ANY signal says
+// mobile-like. Empirically, even desktop browsers without YouTube cookies
+// (e.g. fresh sessions) hit the YT bot challenge on autoplay — so when in
+// doubt, prefer manual.
+const IS_MOBILE = (function () {
+  try {
+    const uaMobile = /iPhone|iPad|iPod|Android|Windows Phone|Mobile/i.test(navigator.userAgent);
+    const narrowViewport = Math.min(window.innerWidth || 9999, window.outerWidth || 9999) <= 820;
+    const coarsePointer =
+      (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || false;
+    const hasTouch =
+      ('ontouchstart' in window) ||
+      (typeof navigator.maxTouchPoints === 'number' && navigator.maxTouchPoints > 0);
+    return uaMobile || narrowViewport || (coarsePointer && hasTouch);
+  } catch {
+    return false;
+  }
+})();
 const FAILED_IDS_KEY = 'yt-failed-ids-v1';
 const FAILED_IDS_TTL = 1000 * 60 * 60 * 24; // 24h
 
