@@ -26,6 +26,16 @@ app.set("trust proxy", true); // honor X-Forwarded-For (Cloudflare Tunnel etc.)
 app.use(express.static(join(__dirname, "../public")));
 app.use(express.json({ limit: "32kb" }));
 
+// Tiny healthcheck for Railway / uptime monitors. Cheap, no upstream dependencies.
+app.get("/health", (req, res) => {
+  res.json({
+    ok: true,
+    uptime_s: Math.round(process.uptime()),
+    cache_size: Object.keys(youtubeCache).length,
+    blocked_videos: blockedVideoIds.size,
+  });
+});
+
 // ── YouTube ID cache ───────────────────────────────────────────────
 const CACHE_PATH = join(__dirname, "../youtube-cache.json");
 
@@ -41,7 +51,16 @@ if (existsSync(CACHE_PATH)) {
 }
 
 function saveCache() {
-  writeFileSync(CACHE_PATH, JSON.stringify(youtubeCache, null, 2));
+  try {
+    writeFileSync(CACHE_PATH, JSON.stringify(youtubeCache, null, 2));
+  } catch (e) {
+    // On Railway / read-only deployments writing to disk may fail. The in-memory
+    // cache still works for the lifetime of the process, so don't crash.
+    if (!saveCache._warned) {
+      console.warn(`  ⚠ youtube-cache.json write failed: ${e.message} (in-memory cache only)`);
+      saveCache._warned = true;
+    }
+  }
 }
 
 // ── TTS voices ─────────────────────────────────────────────────────
@@ -91,52 +110,101 @@ function searchRateLimited(ip) {
   return false;
 }
 
+// ── Recently-reported embed-blocked videoIds (per-process memory) ──
+const blockedVideoIds = new Map(); // videoId -> { ts, count }
+const BLOCKED_TTL_MS = 6 * 60 * 60 * 1000; // 6h
+function isVideoBlocked(id) {
+  if (!id) return false;
+  const entry = blockedVideoIds.get(id);
+  if (!entry) return false;
+  if (Date.now() - entry.ts > BLOCKED_TTL_MS) {
+    blockedVideoIds.delete(id);
+    return false;
+  }
+  // Three independent reports = strong signal; one report = soft signal we still avoid.
+  return entry.count >= 1;
+}
+function reportBlockedVideo(id) {
+  if (!id) return;
+  const e = blockedVideoIds.get(id);
+  blockedVideoIds.set(id, { ts: Date.now(), count: (e?.count || 0) + 1 });
+}
+// Periodically prune stale entries so this map can't grow unbounded.
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of blockedVideoIds) {
+    if (now - v.ts > BLOCKED_TTL_MS) blockedVideoIds.delete(k);
+  }
+}, 30 * 60 * 1000).unref?.();
+
+function scoreYouTubeResult(r) {
+  let score = 0;
+  const t = (r.title || "").toLowerCase();
+  const ch = (r.channel?.name || "").toLowerCase();
+
+  // YouTube auto-generated "Topic" channels are nearly always embeddable; same
+  // for Vevo. Heavy bonus, since this is the single biggest mobile reliability lever.
+  if (ch.endsWith(" - topic") || ch.includes(" - topic")) score += 12;
+  if (ch.includes("vevo")) score += 8;
+  if (ch.includes("official")) score += 5;
+
+  if (t.includes("official audio")) score += 4;
+  if (t.includes("official music video") || t.includes("official video")) score += 3;
+  if (t.includes("audio")) score += 1;
+  if (t.includes("lyric")) score += 1;
+  if (t.includes("topic")) score += 1;
+
+  // Penalize formats that frequently fail mobile embed.
+  if (t.includes("live")) score -= 4;
+  if (t.includes("livestream") || t.includes("24/7") || t.includes("24-7") || t.includes("radio")) score -= 6;
+  if (t.includes("cover")) score -= 8;
+  if (t.includes("remix")) score -= 6;
+  if (t.includes("karaoke")) score -= 8;
+  if (t.includes("tutorial")) score -= 8;
+  if (t.includes("reaction")) score -= 6;
+
+  const dur = (r.duration || 0) / 1000;
+  if (dur > 60 && dur < 600) score += 2;
+  if (dur > 900) score -= 3;
+  if (dur > 3600) score -= 6; // 1h+ videos are usually compilations / livestreams
+
+  // Big bonus if it's been around long enough that embeds are stable.
+  if (typeof r.uploadedAt === "string" && /(year|month)s? ago/.test(r.uploadedAt)) score += 1;
+
+  return score;
+}
+
 async function resolveYouTubeId(title, artist, altQuery = false) {
   const cacheKey = `${title} - ${artist}`;
-  if (!altQuery && youtubeCache[cacheKey]) return youtubeCache[cacheKey];
+  if (!altQuery && youtubeCache[cacheKey] && !isVideoBlocked(youtubeCache[cacheKey])) {
+    return youtubeCache[cacheKey];
+  }
 
   try {
     // Try different query patterns to find embeddable versions
     const queries = altQuery
       ? [
+          `${title} ${artist} topic`,
           `${title} ${artist} full song`,
           `${title} ${artist}`,
           `${artist} ${title} audio`,
         ]
-      : [`${title} ${artist} official audio`];
+      : [`${title} ${artist} topic`, `${title} ${artist} official audio`];
 
     for (const query of queries) {
-      const results = await YouTube.default.search(query, { limit: 5, type: "video" });
+      const results = await YouTube.default.search(query, { limit: 8, type: "video" });
       if (!results.length) continue;
 
-      // Score results: prefer official audio, reject covers/remixes/compilations
-      const scored = results.map((r) => {
-        let score = 0;
-        const t = (r.title || "").toLowerCase();
-        const ch = (r.channel?.name || "").toLowerCase();
-        if (t.includes("official")) score += 3;
-        if (t.includes("audio")) score += 2;
-        if (t.includes("lyric")) score += 1;
-        if (t.includes("topic")) score += 2; // YouTube auto-generated "Topic" channels are always embeddable
-        if (ch.includes("topic")) score += 3;
-        if (ch.includes("vevo")) score += 2;
-        if (t.includes("live")) score -= 2;
-        if (t.includes("cover")) score -= 5;
-        if (t.includes("remix")) score -= 5;
-        if (t.includes("karaoke")) score -= 5;
-        if (t.includes("tutorial")) score -= 5;
-        const dur = (r.duration || 0) / 1000;
-        if (dur > 60 && dur < 600) score += 2;
-        if (dur > 900) score -= 3;
-        return { id: r.id, score, title: r.title };
-      });
+      const scored = results
+        .filter((r) => r.id && !isVideoBlocked(r.id))
+        .map((r) => ({ id: r.id, score: scoreYouTubeResult(r), title: r.title, channel: r.channel?.name || "" }));
       scored.sort((a, b) => b.score - a.score);
 
       if (scored[0]) {
         const bestId = scored[0].id;
         youtubeCache[cacheKey] = bestId;
         saveCache();
-        console.log(`  ♫ Resolved: ${cacheKey} → ${bestId} (${scored[0].title})`);
+        console.log(`  ♫ Resolved: ${cacheKey} → ${bestId} (${scored[0].channel} | ${scored[0].title})`);
         return bestId;
       }
     }
@@ -659,8 +727,8 @@ app.get("/api/search", async (req, res) => {
   }
 
   try {
-    const results = await YouTube.default.search(q, { limit: 12, type: "video" });
-    const items = (results || []).map((r) => ({
+    const results = await YouTube.default.search(q, { limit: 16, type: "video" });
+    let items = (results || []).map((r) => ({
       videoId: r.id,
       title: r.title || "",
       channel: r.channel?.name || "",
@@ -670,7 +738,13 @@ app.get("/api/search", async (req, res) => {
         r.thumbnail?.url ||
         (r.id ? `https://i.ytimg.com/vi/${r.id}/hqdefault.jpg` : ""),
       views: r.views || 0,
-    })).filter((x) => x.videoId);
+      _score: scoreYouTubeResult(r),
+    })).filter((x) => x.videoId && !isVideoBlocked(x.videoId));
+
+    // Sort by predicted embeddability so Topic / Vevo / official audio rise to the top
+    // — critical for mobile reliability.
+    items.sort((a, b) => b._score - a._score);
+    items = items.slice(0, 12).map(({ _score, ...rest }) => rest);
 
     searchCache.set(key, { items, expiresAt: now + SEARCH_TTL_MS });
     if (searchCache.size > 500) {
@@ -701,7 +775,12 @@ const lastBadClearAt = new Map();
 const BAD_CLEAR_COOLDOWN_MS = 5 * 60 * 1000;
 
 app.post("/api/youtube-error", (req, res) => {
-  const { title, artist, errorCode } = req.body || {};
+  const { title, artist, videoId, errorCode } = req.body || {};
+  const isBlock = [2, 100, 101, 150].includes(errorCode);
+
+  // Always remember the bad videoId so search/resolve stop suggesting it.
+  if (isBlock && videoId) reportBlockedVideo(videoId);
+
   if (!title || !artist) return res.json({ ok: true });
   const key = `${title} - ${artist}`;
   const now = Date.now();
@@ -709,7 +788,7 @@ app.post("/api/youtube-error", (req, res) => {
 
   if (
     youtubeCache[key] &&
-    [2, 100, 101, 150].includes(errorCode) &&
+    isBlock &&
     now - last >= BAD_CLEAR_COOLDOWN_MS
   ) {
     delete youtubeCache[key];

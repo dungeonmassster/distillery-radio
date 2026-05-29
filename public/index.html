@@ -1038,18 +1038,74 @@ body::before {
 #yt-player-wrap:focus-within {
   opacity: 1;
 }
-/* On mobile, YouTube requires the iframe to be visible & touchable */
+
+/* Mobile: YouTube IFrame autoplay is unreliable AND triggers anti-bot challenges.
+   Render a full, tappable player so the user can hit play themselves. */
 @media (max-width: 768px) {
   #yt-player-wrap {
-    width: 180px;
-    height: 101px;
-    bottom: 60px;
-    right: 8px;
-    opacity: 0.4;
-    border-radius: 8px;
+    position: relative;
+    bottom: auto;
+    right: auto;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    margin: 16px 0 8px;
+    opacity: 1;
+    border-radius: 10px;
     border: 1px solid var(--border);
     background: #000;
   }
+  #yt-player-wrap iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+}
+
+/* Inline "open in YouTube" fallback link */
+.yt-fallback-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 3px 10px;
+  transition: all 0.2s;
+}
+.yt-fallback-link:hover { color: var(--accent); border-color: var(--accent); }
+
+#embed-blocked-banner {
+  display: none;
+  margin: 14px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--red-dim);
+  border-radius: 10px;
+  background: rgba(139, 74, 74, 0.08);
+  font-family: 'Noto Serif SC', serif;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+#embed-blocked-banner.visible { display: block; animation: fadeIn 0.3s ease; }
+#embed-blocked-banner .label {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.55rem;
+  letter-spacing: 2px;
+  color: var(--red-glow);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+#embed-blocked-banner a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 </style>
 </head>
@@ -1123,7 +1179,18 @@ body::before {
       <div class="song-title" id="song-title">等待调频...</div>
       <div class="song-artist" id="song-artist"></div>
       <div class="song-meta" id="song-meta"></div>
+      <a id="yt-fallback-link" class="yt-fallback-link" href="#" target="_blank" rel="noopener" style="display:none">在 YouTube 中打开 &#8599;</a>
     </div>
+  </div>
+
+  <!-- Anchor where the YT iframe lives on mobile (script moves it here) -->
+  <div id="yt-mobile-slot"></div>
+
+  <!-- Embed-blocked notice (shown when retry budget runs out) -->
+  <div id="embed-blocked-banner" role="status" aria-live="polite">
+    <span class="label">Playback blocked</span>
+    <span id="embed-blocked-text">这段视频在你的设备上嵌入播放被 YouTube 拦截了。</span>
+    <a id="embed-blocked-link" href="#" target="_blank" rel="noopener" style="margin-left:6px">在 YouTube 中打开 &#8599;</a>
   </div>
 
   <!-- Waveform -->
@@ -1225,6 +1292,71 @@ body::before {
 </div>
 
 <script>
+// ── Mobile / failed-video guards ────────────────────────────────
+const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+const FAILED_IDS_KEY = 'yt-failed-ids-v1';
+const FAILED_IDS_TTL = 1000 * 60 * 60 * 24; // 24h
+
+function loadFailedIds() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(FAILED_IDS_KEY) || '{}');
+    const now = Date.now();
+    const fresh = {};
+    for (const [id, ts] of Object.entries(raw)) {
+      if (now - ts < FAILED_IDS_TTL) fresh[id] = ts;
+    }
+    return fresh;
+  } catch { return {}; }
+}
+function saveFailedIds(map) {
+  try { localStorage.setItem(FAILED_IDS_KEY, JSON.stringify(map)); } catch {}
+}
+function isFailedId(id) {
+  if (!id) return false;
+  const m = loadFailedIds();
+  return !!m[id];
+}
+function recordFailedId(id) {
+  if (!id) return;
+  const m = loadFailedIds();
+  m[id] = Date.now();
+  saveFailedIds(m);
+}
+
+// Cap the global retry budget so a session can't drown itself in fallback attempts.
+const MAX_FALLBACK_RETRIES = 3;
+let fallbackBudget = MAX_FALLBACK_RETRIES;
+function resetFallbackBudget() { fallbackBudget = MAX_FALLBACK_RETRIES; }
+
+// ── Inline "Open in YouTube" UI helpers ─────────────────────────
+function ytWatchUrl(id) {
+  if (!id) return '#';
+  const host = IS_MOBILE ? 'https://m.youtube.com' : 'https://www.youtube.com';
+  return `${host}/watch?v=${encodeURIComponent(id)}`;
+}
+function updateFallbackLink(videoId) {
+  const a = document.getElementById('yt-fallback-link');
+  if (!a) return;
+  if (!videoId) { a.style.display = 'none'; a.removeAttribute('href'); return; }
+  a.href = ytWatchUrl(videoId);
+  a.style.display = 'inline-flex';
+}
+function showEmbedBlockedBanner(videoId, item) {
+  const banner = document.getElementById('embed-blocked-banner');
+  const link = document.getElementById('embed-blocked-link');
+  const text = document.getElementById('embed-blocked-text');
+  if (!banner || !link) return;
+  link.href = ytWatchUrl(videoId);
+  if (text && item && item.title) {
+    text.textContent = `《${item.title}》在你的设备上嵌入播放被 YouTube 拦截。`;
+  }
+  banner.classList.add('visible');
+}
+function hideEmbedBlockedBanner() {
+  const b = document.getElementById('embed-blocked-banner');
+  if (b) b.classList.remove('visible');
+}
+
 // ── YouTube IFrame API ─────────────────────────────────────────
 let ytPlayer = null;
 let ytReady = false;
@@ -1238,6 +1370,15 @@ document.head.appendChild(ytScript);
 
 window.onYouTubeIframeAPIReady = function () {
   const wrap = document.getElementById('yt-player-wrap');
+
+  // On mobile, hoist the iframe into the document flow so it's a normal,
+  // tappable, full-width player. iOS WebKit + YouTube anti-bot will reliably
+  // accept playback when the user taps the iframe directly.
+  if (IS_MOBILE && wrap) {
+    const slot = document.getElementById('yt-mobile-slot');
+    if (slot) slot.appendChild(wrap);
+  }
+
   const pw = wrap ? wrap.clientWidth || 320 : 320;
   const ph = wrap ? wrap.clientHeight || 180 : 180;
   ytPlayer = new YT.Player('yt-player', {
@@ -1245,9 +1386,9 @@ window.onYouTubeIframeAPIReady = function () {
     width: pw,
     playerVars: {
       autoplay: 0,
-      controls: 0,
-      disablekb: 1,
-      fs: 0,
+      controls: IS_MOBILE ? 1 : 0, // mobile: show YouTube native controls so user can tap play
+      disablekb: IS_MOBILE ? 0 : 1,
+      fs: IS_MOBILE ? 1 : 0,
       rel: 0,
       modestbranding: 1,
       origin: window.location.origin,
@@ -1256,7 +1397,7 @@ window.onYouTubeIframeAPIReady = function () {
     events: {
       onReady: () => {
         ytReady = true;
-        console.log('[YT] Player ready!');
+        console.log('[YT] Player ready! mobile=', IS_MOBILE);
         ytPlayer.setVolume(parseInt(document.getElementById('volume').value));
         if (ytPendingVideoId) {
           console.log('[YT] Loading pending video:', ytPendingVideoId);
@@ -1304,10 +1445,21 @@ function loadYouTubeVideo(videoId) {
     ytPendingVideoId = videoId;
     return false;
   }
-  console.log('[YT] Loading video:', videoId, 'userInteracted:', state.userHasInteracted);
+  if (isFailedId(videoId)) {
+    console.warn('[YT] Refusing to load videoId previously known to fail:', videoId);
+    return false;
+  }
+  console.log('[YT] Loading video:', videoId, 'userInteracted:', state.userHasInteracted, 'mobile:', IS_MOBILE);
   state.currentYouTubeId = videoId;
+  updateFallbackLink(videoId);
+  hideEmbedBlockedBanner();
   try {
-    if (state.userHasInteracted) {
+    // Mobile: never auto-play. Cue the video and let the user tap the YT player
+    // controls themselves. This sidesteps both iOS autoplay rules and YouTube's
+    // anti-bot challenge that fires when iframes try to start playing on their own.
+    if (IS_MOBILE) {
+      ytPlayer.cueVideoById({ videoId: videoId, startSeconds: 0 });
+    } else if (state.userHasInteracted) {
       ytPlayer.loadVideoById({ videoId: videoId, startSeconds: 0 });
     } else {
       ytPlayer.cueVideoById({ videoId: videoId, startSeconds: 0 });
@@ -1359,18 +1511,35 @@ function updateProgress() {
 async function handleYouTubeError(code) {
   console.error('[YT] Error:', code);
 
+  const blockedCode = [101, 150, 2, 100].includes(code);
+  const currentId = state.currentYouTubeId;
+  if (blockedCode && currentId) recordFailedId(currentId);
+
   // If we're playing a result from the search panel, try the next embeddable result
-  if (state.searchContext && [101, 150, 2, 100].includes(code)) {
+  if (state.searchContext && blockedCode) {
     const ctx = state.searchContext;
-    if (ctx.cursor + 1 < ctx.items.length) {
-      ctx.cursor += 1;
-      const nextItem = ctx.items[ctx.cursor];
-      console.log('[YT] Search item blocked, trying next:', nextItem.title);
+    if (fallbackBudget <= 0) {
+      console.warn('[YT] Fallback budget exhausted, stopping retries.');
+      showEmbedBlockedBanner(currentId, ctx.items[ctx.cursor]);
+      ctx.exhausted = true;
+      if (state.playing) togglePlay();
+      return;
+    }
+    // Skip ahead to the next item that we haven't already tagged as failed.
+    let nextIdx = ctx.cursor + 1;
+    while (nextIdx < ctx.items.length && isFailedId(ctx.items[nextIdx]?.videoId)) {
+      nextIdx++;
+    }
+    if (nextIdx < ctx.items.length) {
+      ctx.cursor = nextIdx;
+      const nextItem = ctx.items[nextIdx];
+      fallbackBudget--;
+      console.log('[YT] Search item blocked, trying next:', nextItem.title, 'budget left:', fallbackBudget);
       songMeta.textContent = '上一首被屏蔽，切到下一条结果…';
       setTimeout(() => playSearchItem(nextItem, { fromFallback: true }), 250);
       return;
     } else {
-      songMeta.textContent += ' · 没有可播放的搜索结果了';
+      showEmbedBlockedBanner(currentId, ctx.items[ctx.cursor]);
       ctx.exhausted = true;
       if (state.playing) togglePlay();
       return;
@@ -1380,20 +1549,28 @@ async function handleYouTubeError(code) {
   const song = state.currentData?.radio?.song;
   if (!song) return;
 
-  // Report to server to clear bad cache entry
+  // Report to server to clear bad cache entry (server itself throttles dedup).
   fetch('/api/youtube-error', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       title: song.title,
       artist: song.artist,
+      videoId: currentId,
       errorCode: code,
     }),
   }).catch(() => {});
 
-  // Error 101/150 = embed blocked, try fallback search for an embeddable version
+  // Error 101/150 = embed blocked, try ONE alt source then bail. The runaway
+  // "clear cache → re-resolve → 150 → clear again" loop killed prod before.
   if ([101, 150].includes(code)) {
-    console.log('[YT] Embed blocked, trying fallback search...');
+    if (fallbackBudget <= 0) {
+      console.warn('[YT] Fallback budget exhausted; surfacing manual link.');
+      showEmbedBlockedBanner(currentId, { title: song.title, channel: song.artist });
+      return;
+    }
+    fallbackBudget--;
+    console.log('[YT] Embed blocked, trying fallback search... budget left:', fallbackBudget);
     songMeta.textContent += ' · finding alt source...';
     tryFallbackYouTubeId(song.title, song.artist);
     return;
@@ -1401,8 +1578,9 @@ async function handleYouTubeError(code) {
 
   songMeta.textContent += ' · audio unavailable';
 
-  // Auto-advance after 3 seconds
-  if (state.autoMode) {
+  // Auto-advance after 3 seconds, but only if we still have budget.
+  if (state.autoMode && fallbackBudget > 0) {
+    fallbackBudget--;
     setTimeout(() => fetchRadio(), 3000);
   }
 }
@@ -1580,6 +1758,7 @@ async function fetchRadio() {
 
   // Radio overrides any previous search-context fallback chain
   state.searchContext = null;
+  resetFallbackBudget();
 
   try {
     const res = await fetch('/api/radio');
@@ -1633,7 +1812,21 @@ async function fetchRadio() {
     }
 
     // Auto-sequence: DJ commentary TTS → then auto-play music
-    if (state.autoMode && radio.commentary && !state.userHasInteracted) {
+    if (IS_MOBILE) {
+      // On mobile we never programmatically autoplay — iOS / YouTube anti-bot will
+      // either silently refuse or escalate to a captcha challenge. Just keep the
+      // commentary visible and let the user tap the YouTube player to start.
+      console.log('[Radio] Mobile: skipping auto-play, awaiting tap on YT player.');
+      const hint = document.getElementById('mobile-play-hint');
+      if (!hint) {
+        const h = document.createElement('div');
+        h.id = 'mobile-play-hint';
+        h.textContent = '👇 在下方播放器轻点 ▶ 开始播放';
+        h.style.cssText = "text-align:center;font-family:'JetBrains Mono',monospace;font-size:0.65rem;letter-spacing:2px;color:var(--accent);margin:8px 0;animation:loadingPulse 2s infinite;";
+        const slot = document.getElementById('yt-mobile-slot');
+        if (slot) slot.parentNode.insertBefore(h, slot);
+      }
+    } else if (state.autoMode && radio.commentary && !state.userHasInteracted) {
       // First boot: wait for first interaction (click) to start audio
       console.log('[Radio] Awaiting user interaction for audio...');
     } else if (state.autoMode && radio.commentary) {
@@ -1860,6 +2053,7 @@ async function sendSongRequest(instruction) {
   requestSend.disabled = true;
   requestInput.disabled = true;
   state.searchContext = null;
+  resetFallbackBudget();
 
   // Visual feedback
   songTitle.style.opacity = '0.3';
@@ -2030,13 +2224,17 @@ async function runSearch(q) {
 function playSearchItem(item, opts = {}) {
   if (!item || !item.videoId) return;
   if (!opts.fromFallback) {
-    // Set up fallback chain so embed-blocked items skip to the next result
-    const idx = searchCurrentItems.indexOf(item);
+    // Set up fallback chain so embed-blocked items skip to the next result.
+    // Pre-prune any items the user already saw fail in this device.
+    const cleanItems = searchCurrentItems.filter((x) => !isFailedId(x.videoId));
+    const idx = cleanItems.indexOf(item);
     state.searchContext = {
-      items: searchCurrentItems.slice(),
+      items: cleanItems.length ? cleanItems : searchCurrentItems.slice(),
       cursor: idx >= 0 ? idx : 0,
     };
     state.currentData = null; // disable radio-style fallback path
+    resetFallbackBudget();
+    hideEmbedBlockedBanner();
     hideSearchResults();
     searchInput.blur();
   }
