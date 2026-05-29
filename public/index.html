@@ -1019,6 +1019,38 @@ body::before {
   background: var(--accent);
   color: var(--bg-deep);
 }
+
+/* ── YouTube player wrap ───────────────────────────────────── */
+#yt-player-wrap {
+  position: fixed;
+  bottom: 10px;
+  right: 10px;
+  width: 320px;
+  height: 180px;
+  overflow: hidden;
+  z-index: 9999;
+  opacity: 0.01;
+  pointer-events: auto;
+  transition: opacity 0.3s;
+}
+/* On hover/touch, reveal the player so users can see video is playing */
+#yt-player-wrap:hover,
+#yt-player-wrap:focus-within {
+  opacity: 1;
+}
+/* On mobile, YouTube requires the iframe to be visible & touchable */
+@media (max-width: 768px) {
+  #yt-player-wrap {
+    width: 180px;
+    height: 101px;
+    bottom: 60px;
+    right: 8px;
+    opacity: 0.4;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #000;
+  }
+}
 </style>
 </head>
 <body>
@@ -1032,8 +1064,8 @@ body::before {
 <!-- Ambient particles -->
 <canvas id="particles-canvas"></canvas>
 
-<!-- YouTube player (visually hidden but rendered on-screen for browser autoplay policy) -->
-<div id="yt-player-wrap" style="position:fixed;bottom:0;right:0;width:320px;height:180px;opacity:0.001;z-index:-1;pointer-events:none;">
+<!-- YouTube player (visible but unobtrusive - MUST be visible & interactive for iOS YouTube playback) -->
+<div id="yt-player-wrap">
   <div id="yt-player"></div>
 </div>
 
@@ -1205,9 +1237,12 @@ ytScript.src = 'https://www.youtube.com/iframe_api';
 document.head.appendChild(ytScript);
 
 window.onYouTubeIframeAPIReady = function () {
+  const wrap = document.getElementById('yt-player-wrap');
+  const pw = wrap ? wrap.clientWidth || 320 : 320;
+  const ph = wrap ? wrap.clientHeight || 180 : 180;
   ytPlayer = new YT.Player('yt-player', {
-    height: '180',
-    width: '320',
+    height: ph,
+    width: pw,
     playerVars: {
       autoplay: 0,
       controls: 0,
