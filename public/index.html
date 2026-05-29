@@ -1597,8 +1597,25 @@ async function fetchRadio() {
       tryFallbackYouTubeId(radio.song.title, radio.song.artist);
     }
 
-    // Ensure playing state
-    if (!state.playing) togglePlay();
+    // Auto-sequence: DJ commentary TTS → then auto-play music
+    if (state.autoMode && radio.commentary && !state.userHasInteracted) {
+      // First boot: wait for first interaction (click) to start audio
+      console.log('[Radio] Awaiting user interaction for audio...');
+    } else if (state.autoMode && radio.commentary) {
+      // Auto play: DJ commentary first, then music after TTS ends
+      setTimeout(() => {
+        speakCommentary(radio.commentary, () => {
+          // After TTS ends: auto-play YouTube at full volume
+          console.log('[Radio] TTS finished, starting music...');
+          const vol = parseInt(document.getElementById('volume').value);
+          ytSetVolume(vol);
+          if (!state.playing) togglePlay();
+        });
+      }, 1500); // short pause after typewriter finishes
+    } else {
+      // No commentary, just play music
+      if (!state.playing) togglePlay();
+    }
 
   } catch (e) {
     console.error('Radio fetch error:', e);
@@ -1619,7 +1636,18 @@ function togglePlay() {
 
   // Control real YouTube audio
   if (state.playing) {
-    ytPlay();
+    // Ensure video is loaded (not just cued) before playing
+    if (state.currentYouTubeId && ytReady && ytPlayer && ytPlayer.getPlayerState) {
+      const ps = ytPlayer.getPlayerState();
+      // UNSTARTED(-1) or CUED(5) → need loadVideoById first
+      if (ps === -1 || ps === 5) {
+        ytPlayer.loadVideoById({ videoId: state.currentYouTubeId, startSeconds: 0 });
+      } else {
+        ytPlay();
+      }
+    } else {
+      ytPlay();
+    }
     startProgressTracking();
   } else {
     ytPause();
@@ -1663,7 +1691,7 @@ voiceSelect.addEventListener('change', () => {
   localStorage.setItem('tts-voice', voiceSelect.value);
 });
 
-async function speakCommentary(text) {
+async function speakCommentary(text, onEnd) {
   if (!text || ttsSpeaking) return;
 
   ttsSpeaking = true;
@@ -1696,11 +1724,13 @@ async function speakCommentary(text) {
       stopTTS();
       // Restore music volume
       ytSetVolume(currentVol);
+      if (typeof onEnd === 'function') onEnd();
     };
 
     ttsAudio.onerror = () => {
       stopTTS();
       ytSetVolume(currentVol);
+      if (typeof onEnd === 'function') onEnd();
     };
 
     await ttsAudio.play();
@@ -1708,6 +1738,7 @@ async function speakCommentary(text) {
     console.error('TTS error:', e);
     stopTTS();
     ytSetVolume(currentVol);
+    if (typeof onEnd === 'function') onEnd();
   }
 }
 
@@ -1723,6 +1754,7 @@ function stopTTS() {
 }
 
 ttsBtn.addEventListener('click', () => {
+  markUserInteracted();
   if (ttsSpeaking) {
     const currentVol = parseInt(document.getElementById('volume').value);
     ytSetVolume(currentVol);
@@ -2073,6 +2105,19 @@ searchInput.addEventListener('focus', () => {
     searchResults.classList.add('visible');
   }
 });
+
+// ── Global user interaction handler ─────────────────────────────
+document.addEventListener('click', () => {
+  if (!state.userHasInteracted) {
+    markUserInteracted();
+  }
+}, { once: true });
+
+document.addEventListener('keydown', () => {
+  if (!state.userHasInteracted) {
+    markUserInteracted();
+  }
+}, { once: true });
 
 // ── Boot sequence ───────────────────────────────────────────────
 function showUnmuteHint() {
